@@ -1,0 +1,94 @@
+name: Flatten and Track Contracts
+
+on:
+  push:
+    branches: [ dev, main ]
+  workflow_dispatch:
+
+env:
+  FOUNDRY_PROFILE: ci
+  FOUNDRY_DISABLE_NIGHTLY_WARNING: true
+
+jobs:
+  validate-and-flatten:
+    name: Validate and Flatten Contracts
+    runs-on: ubuntu-latest
+    
+    # Only run if not a bot commit (avoid loops)
+    if: |
+      !contains(github.event.head_commit.message, '[skip ci]') && 
+      !contains(github.event.head_commit.message, 'auto-flatten')
+    
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: nightly
+
+      - name: Build contracts
+        run: |
+          forge clean && forge build
+
+      - name: Run tests
+        run: |
+          forge test -vvv
+
+      - name: Validate upgrade safety
+        run: |
+          forge script script/upgrades/ValidateUpgrade.s.sol
+          echo "✅ Validation passed - proceeding to flatten contracts"
+
+      - name: Update flattened reference contracts
+        run: |
+          echo "📝 Flattening contracts to test/upgrades/current/"
+          
+          # Backup old reference if it exists
+          if [ -d "test/upgrades/current" ]; then
+            TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+            mkdir -p test/upgrades/archive
+            cp -r test/upgrades/current "test/upgrades/archive/backup_${TIMESTAMP}"
+            echo "📦 Backed up previous reference to test/upgrades/archive/backup_${TIMESTAMP}"
+          fi
+          
+          # Create fresh flattened contracts
+          mkdir -p test/upgrades/current
+          forge flatten src/YieldDistributor.sol > test/upgrades/current/YieldDistributor.sol
+          forge flatten src/ButteredBread.sol > test/upgrades/current/ButteredBread.sol
+          
+          echo "✅ Flattened contracts saved to test/upgrades/current/"
+
+      - name: Install solc for compilation check
+        run: |
+          sudo add-apt-repository -y ppa:ethereum/ethereum
+          sudo apt-get update
+          sudo apt-get install -y solc
+
+      - name: Verify flattened contracts compile
+        run: |
+          echo "🔍 Verifying flattened contracts compile..."
+          for f in test/upgrades/current/*.sol; do
+            echo "Checking $(basename $f)..."
+            solc --optimize "$f" --via-ir --bin > /dev/null
+          done
+          echo "✅ All flattened contracts compile successfully"
+
+      - name: Commit flattened reference contracts
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          file_pattern: test/upgrades/current/*.sol test/upgrades/archive/**/*.sol
+          commit_message: |
+            chore: auto-flatten reference contracts after validation [skip ci]
+            
+            Updated reference contracts in test/upgrades/current/
+            Previous version backed up to test/upgrades/archive/
+          commit_user_name: github-actions[bot]
+          commit_user_email: github-actions[bot]@users.noreply.github.com
+          push_options: '--force-with-lease'

@@ -10,15 +10,14 @@ contract ValidateUpgrade is Script {
     function run() external {
         vm.startBroadcast();
         
-        // Validate YieldDistributor upgrade
+        // Validate YieldDistributor upgrade against current flattened reference
         Options memory yieldOpts;
-        yieldOpts.referenceContract = "v1.0.4/YieldDistributor.sol:YieldDistributor";
-        yieldOpts.unsafeSkipStorageCheck = true; // Skip storage check due to ERC7201 migration
+        yieldOpts.referenceContract = "current/YieldDistributor.sol:YieldDistributor";
         Upgrades.validateUpgrade("YieldDistributor.sol:YieldDistributor", yieldOpts);
         
-        // Validate ButteredBread upgrade
+        // Validate ButteredBread upgrade against current flattened reference
         Options memory breadOpts;
-        breadOpts.referenceContract = "v1.0.4/ButteredBread.sol:ButteredBread";
+        breadOpts.referenceContract = "current/ButteredBread.sol:ButteredBread";
         Upgrades.validateUpgrade("ButteredBread.sol:ButteredBread", breadOpts);
         
         vm.stopBroadcast();

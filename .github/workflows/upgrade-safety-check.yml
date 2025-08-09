@@ -1,0 +1,56 @@
+name: Upgrade Safety Check
+
+on:
+  pull_request:
+    branches: [ dev, main ]
+  workflow_dispatch:
+
+env:
+  FOUNDRY_PROFILE: ci
+  FOUNDRY_DISABLE_NIGHTLY_WARNING: true
+
+jobs:
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: nightly
+
+      - name: Run Forge build
+        run: |
+          forge --version
+          forge build --sizes
+
+      - name: Run Forge tests
+        run: |
+          forge test -vvv
+
+  validate-upgrade:
+    name: Validate Upgrade Safety
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: nightly
+
+      - name: Build contracts
+        run: |
+          forge clean && forge build
+
+      - name: Validate upgrade safety against current reference
+        run: |
+          forge script script/upgrades/ValidateUpgrade.s.sol
+          echo "✅ Upgrade validation passed - contracts are safe to upgrade"
